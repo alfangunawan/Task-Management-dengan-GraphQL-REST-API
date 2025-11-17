@@ -860,107 +860,132 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        <section className="bg-white rounded-lg shadow p-6 space-y-4">
-          <div className="flex items-start justify-between gap-4">
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        <section className="bg-white border border-gray-100 rounded-xl shadow-sm p-6 space-y-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800">Team Management</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Team Management</h2>
               <p className="text-sm text-gray-500">
-                {editingTeamId ? 'Update the selected team and keep everyone in sync.' : 'Create new teams or maintain the existing ones.'}
+                {editingTeamId
+                  ? 'Update the selected team and keep everyone in sync.'
+                  : 'Create new teams or tidy up existing groups with a few clicks.'}
               </p>
             </div>
-            {teamActionLoading && <span className="text-xs text-gray-400">Working…</span>}
+            {teamActionLoading && <span className="text-xs font-medium text-gray-400">Working…</span>}
           </div>
-          {teamActionError && <p className="text-sm text-red-600">{teamActionError}</p>}
-          {teamActionMessage && <p className="text-sm text-green-600">{teamActionMessage}</p>}
-          <form onSubmit={handleTeamSubmit} className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
-              <input
-                value={teamForm.name}
-                onChange={(event) => setTeamForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g. Product Team"
-              />
+
+          {(teamActionError || teamActionMessage) && (
+            <div
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                teamActionError
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              }`}
+            >
+              {teamActionError || teamActionMessage}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                value={teamForm.description}
-                onChange={(event) => setTeamForm((prev) => ({ ...prev, description: event.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
-                rows={2}
-                placeholder="Optional short summary"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="submit"
-                disabled={teamActionLoading}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {editingTeamId ? 'Update Team' : 'Create Team'}
-              </button>
-              {editingTeamId && (
+          )}
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <form onSubmit={handleTeamSubmit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Team Name</label>
+                <input
+                  value={teamForm.name}
+                  onChange={(event) => setTeamForm((prev) => ({ ...prev, name: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="e.g. Product Team"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  value={teamForm.description}
+                  onChange={(event) => setTeamForm((prev) => ({ ...prev, description: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  rows={3}
+                  placeholder="Optional short summary"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <button
-                  type="button"
-                  onClick={handleCancelEditTeam}
-                  className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
+                  type="submit"
                   disabled={teamActionLoading}
+                  className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Cancel
+                  {editingTeamId ? 'Update Team' : 'Create Team'}
                 </button>
+                {editingTeamId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEditTeam}
+                    disabled={teamActionLoading}
+                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">
+                  Existing Teams
+                </h3>
+                <span className="text-xs text-gray-400">{teams.length} total</span>
+              </div>
+              {teams.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500">
+                  No teams available yet.
+                </p>
+              ) : (
+                <div className="max-h-72 overflow-y-auto pr-1 space-y-2">
+                  {teams.map((team) => (
+                    <div
+                      key={team.id}
+                      className={`flex flex-col gap-3 rounded-lg border px-4 py-3 transition md:flex-row md:items-center md:justify-between ${
+                        selectedTeam === team.id
+                          ? 'border-blue-200 bg-blue-50'
+                          : 'border-gray-200 bg-white hover:border-blue-200'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-gray-800">{team.name}</p>
+                        {team.description && (
+                          <p className="text-xs text-gray-500">{team.description}</p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTeam(team.id)}
+                          className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-3 py-1 text-sm font-medium text-gray-600 transition hover:bg-gray-100"
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEditTeam(team)}
+                          disabled={teamActionLoading}
+                          className="inline-flex items-center justify-center rounded-lg border border-blue-300 px-3 py-1 text-sm font-medium text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTeam(team.id)}
+                          disabled={teamActionLoading}
+                          className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-1 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </form>
-          <div className="border-t border-gray-200 pt-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Existing Teams</h3>
-            {teams.length === 0 ? (
-              <p className="text-sm text-gray-500">No teams available yet.</p>
-            ) : (
-              <ul className="space-y-2">
-                {teams.map((team) => (
-                  <li
-                    key={team.id}
-                    className={`flex flex-col gap-3 rounded-lg border px-3 py-3 md:flex-row md:items-center md:justify-between ${
-                      selectedTeam === team.id ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
-                    }`}
-                  >
-                    <div>
-                      <p className="font-medium text-gray-800">{team.name}</p>
-                      {team.description && (
-                        <p className="text-sm text-gray-500">{team.description}</p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-sm">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedTeam(team.id)}
-                        className="border border-gray-300 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-100 transition"
-                      >
-                        View
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleEditTeam(team)}
-                        className="border border-blue-300 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-50 transition"
-                        disabled={teamActionLoading}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTeam(team.id)}
-                        className="border border-red-300 text-red-600 px-3 py-1 rounded-lg hover:bg-red-50 transition disabled:opacity-50"
-                        disabled={teamActionLoading}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         </section>
 
