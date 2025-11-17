@@ -32,6 +32,8 @@ type NotificationMessage = {
 type Team = {
   id: string;
   name: string;
+  description?: string;
+  members?: string[];
 };
 
 type User = {
@@ -65,6 +67,16 @@ const GET_TASKS = gql`
     }
   }
   ${TASK_FIELDS}
+`;
+
+const GET_NOTIFICATIONS = gql`
+  query Notifications($userId: ID!) {
+    notifications(userId: $userId) {
+      id
+      message
+      createdAt
+    }
+  }
 `;
 
 const CREATE_TASK = gql`
@@ -131,6 +143,14 @@ export default function Home() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<string>('');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [registerForm, setRegisterForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    teamId: '',
+  });
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -142,6 +162,11 @@ export default function Home() {
   const [notifications, setNotifications] = useState<NotificationMessage[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const [registerSuccess, setRegisterSuccess] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<string[]>([]);
+  const [memberToAdd, setMemberToAdd] = useState('');
+  const [teamLoading, setTeamLoading] = useState(false);
 
   const hasSelectedTeam = Boolean(selectedTeam);
 
@@ -156,6 +181,14 @@ export default function Home() {
     },
     skip: !isLoggedIn || !hasSelectedTeam,
     fetchPolicy: 'cache-and-network',
+  });
+
+  const { data: notificationsData, refetch: refetchNotifications } = useQuery<{
+    notifications: NotificationMessage[];
+  }>(GET_NOTIFICATIONS, {
+    variables: { userId: user?.id ?? '' },
+    skip: !user,
+    fetchPolicy: 'network-only',
   });
 
   const [createTaskMutation] = useMutation(CREATE_TASK, {
@@ -241,8 +274,9 @@ export default function Home() {
       setSelectedTeam(parsedUser.teamId || '');
       loadTeams();
       loadUsers();
+      refetchNotifications({ userId: parsedUser.id });
     }
-  }, []);
+  }, [refetchNotifications]);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -260,17 +294,68 @@ export default function Home() {
     }
   }, [user, teams, selectedTeam]);
 
+  useEffect(() => {
+    if (notificationsData?.notifications) {
+      setNotifications((prev) => {
+        const localOnly = prev.filter((item) => item.id.startsWith('local-'));
+        const serverSorted = notificationsData.notifications
+          .slice()
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return [...localOnly, ...serverSorted]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 5);
+      });
+    }
+  }, [notificationsData]);
+
+  useEffect(() => {
+    if (!selectedTeam) {
+      setTeamMembers([]);
+      setMemberToAdd('');
+      return;
+    }
+
+    const fetchTeamMembers = async () => {
+      try {
+        setTeamLoading(true);
+        const response = await teamApi.getTeam(selectedTeam);
+        const team = response.data as Team;
+        setTeamMembers(Array.isArray(team.members) ? team.members : []);
+      } catch (error) {
+        console.error('Failed to load team members', error);
+        setTeamMembers([]);
+      } finally {
+        setTeamLoading(false);
+      }
+    };
+
+    fetchTeamMembers();
+  }, [selectedTeam]);
+
+  const toggleAuthMode = () => {
+    if (!isRegisterMode) {
+      setRegisterSuccess(null);
+    }
+    setIsRegisterMode((prev) => !prev);
+    setAuthError(null);
+    setRegisterError(null);
+    setRegisterForm({ name: '', email: '', password: '', confirmPassword: '', teamId: '' });
+  };
+
   const pushNotification = (message: string) => {
     setNotifications((prev) => {
       const next: NotificationMessage[] = [
         {
-          id: `${Date.now()}-${Math.random()}`,
+          id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           message,
           createdAt: new Date().toISOString(),
         },
-        ...prev,
+        ...prev.filter((notification) => notification.id.startsWith('local-')),
+        ...prev.filter((notification) => !notification.id.startsWith('local-')),
       ];
-      return next.slice(0, 5);
+      return next
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5);
     });
   };
 
@@ -292,6 +377,44 @@ export default function Home() {
     }
   };
 
+  const handleRegister = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setRegisterError(null);
+    setRegisterSuccess(null);
+
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setRegisterError('Passwords do not match');
+      return;
+    }
+
+    try {
+      const emailForLogin = registerForm.email.trim();
+      const payload = {
+        name: registerForm.name.trim(),
+        email: emailForLogin,
+        password: registerForm.password,
+        teamId: registerForm.teamId.trim() || undefined,
+      };
+
+      if (!payload.name || !payload.email || !payload.password) {
+        setRegisterError('Name, email, and password are required');
+        return;
+      }
+
+      const response = await authApi.register(payload);
+      const successMessage = response.data?.message || 'Registration successful. Please log in to continue.';
+
+      setRegisterSuccess(successMessage);
+      setRegisterForm({ name: '', email: '', password: '', confirmPassword: '', teamId: '' });
+      setIsRegisterMode(false);
+      setLoginForm({ email: emailForLogin, password: '' });
+      setAuthError(null);
+    } catch (error: any) {
+      const message = error?.response?.data?.error || 'Registration failed, please try again';
+      setRegisterError(message);
+    }
+  };
+
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     setAuthError(null);
@@ -308,6 +431,7 @@ export default function Home() {
       setLoginForm({ email: '', password: '' });
       loadTeams();
       loadUsers();
+      await refetchNotifications({ userId: loggedInUser.id });
     } catch (error: any) {
       const message = error?.response?.data?.error || 'Login failed, please check your credentials';
       setAuthError(message);
@@ -324,6 +448,9 @@ export default function Home() {
     setTeams([]);
     setUsers([]);
     setSelectedTeam('');
+    setTeamMembers([]);
+    setMemberToAdd('');
+    setNotifications([]);
   };
 
   const handleCreateTask = async (event: React.FormEvent) => {
@@ -346,6 +473,41 @@ export default function Home() {
       });
     } catch (error: any) {
       pushNotification(error.message || 'Failed to create task');
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedTeam || !memberToAdd) {
+      return;
+    }
+    try {
+      setTeamLoading(true);
+      await teamApi.addMember(selectedTeam, memberToAdd);
+      setMemberToAdd('');
+      const response = await teamApi.getTeam(selectedTeam);
+      const updated = response.data as Team;
+      setTeamMembers(Array.isArray(updated.members) ? updated.members : []);
+      pushNotification('Team member added');
+    } catch (error: any) {
+      pushNotification(error?.response?.data?.error || 'Failed to add member');
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!selectedTeam) {
+      return;
+    }
+    try {
+      setTeamLoading(true);
+      await teamApi.removeMember(selectedTeam, userId);
+      setTeamMembers((prev) => prev.filter((id) => id !== userId));
+      pushNotification('Team member removed');
+    } catch (error: any) {
+      pushNotification(error?.response?.data?.error || 'Failed to remove member');
+    } finally {
+      setTeamLoading(false);
     }
   };
 
@@ -390,51 +552,175 @@ export default function Home() {
     URGENT: 'text-red-500',
   };
 
+  const availableUsers = useMemo(() => {
+    if (!users.length) {
+      return [] as User[];
+    }
+    return users.filter((u) => !teamMembers.includes(u.id));
+  }, [users, teamMembers]);
+
+  const membersWithDetails = useMemo(() => {
+    return teamMembers
+      .map((memberId) => users.find((u) => u.id === memberId))
+      .filter((u): u is User => Boolean(u));
+  }, [teamMembers, users]);
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-xl shadow-xl p-8 w-full max-w-md">
-          <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">Task Manager Login</h1>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={loginForm.email}
-                onChange={(e) => setLoginForm((prev) => ({ ...prev, email: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-                placeholder="admin@taskmanager.com"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={loginForm.password}
-                onChange={(e) => setLoginForm((prev) => ({ ...prev, password: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
-                placeholder="admin123"
-                required
-              />
-            </div>
-            {authError && (
-              <p className="text-red-600 text-sm">{authError}</p>
+          <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">
+            {isRegisterMode ? 'Create an Account' : 'Task Manager Login'}
+          </h1>
+          <form
+            onSubmit={isRegisterMode ? handleRegister : handleLogin}
+            className="space-y-4"
+          >
+            {isRegisterMode ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={registerForm.name}
+                    onChange={(event) =>
+                      setRegisterForm((prev) => ({ ...prev, name: event.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="Jane Doe"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={registerForm.email}
+                    onChange={(event) =>
+                      setRegisterForm((prev) => ({ ...prev, email: event.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="user@example.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={registerForm.password}
+                    onChange={(event) =>
+                      setRegisterForm((prev) => ({ ...prev, password: event.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="******"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={registerForm.confirmPassword}
+                    onChange={(event) =>
+                      setRegisterForm((prev) => ({ ...prev, confirmPassword: event.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="******"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Team ID (optional)</label>
+                  <input
+                    type="text"
+                    value={registerForm.teamId}
+                    onChange={(event) =>
+                      setRegisterForm((prev) => ({ ...prev, teamId: event.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="Defaults to team 1"
+                  />
+                </div>
+                {registerError && (
+                  <p className="text-red-600 text-sm">{registerError}</p>
+                )}
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={loginForm.email}
+                    onChange={(event) =>
+                      setLoginForm((prev) => ({ ...prev, email: event.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="admin@taskmanager.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(event) =>
+                      setLoginForm((prev) => ({ ...prev, password: event.target.value }))
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500"
+                    placeholder="admin123"
+                    required
+                  />
+                </div>
+                {authError && <p className="text-red-600 text-sm">{authError}</p>}
+                {registerSuccess && (
+                  <p className="text-green-600 text-sm">{registerSuccess}</p>
+                )}
+              </>
             )}
             <button
               type="submit"
               className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition"
             >
-              Login
+              {isRegisterMode ? 'Register' : 'Login'}
             </button>
           </form>
-          <div className="mt-6 bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
-            <p className="font-semibold mb-2">Demo Accounts</p>
-            <ul className="space-y-1">
-              <li>Admin · admin@taskmanager.com / admin123</li>
-              <li>User · user@taskmanager.com / user123</li>
-            </ul>
+          <div className="mt-4 text-sm text-center text-gray-600">
+            {isRegisterMode ? (
+              <span>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={toggleAuthMode}
+                  className="text-blue-600 hover:underline"
+                >
+                  Back to login
+                </button>
+              </span>
+            ) : (
+              <span>
+                Need an account?{' '}
+                <button
+                  type="button"
+                  onClick={toggleAuthMode}
+                  className="text-blue-600 hover:underline"
+                >
+                  Create one
+                </button>
+              </span>
+            )}
           </div>
+          {!isRegisterMode && (
+            <div className="mt-6 bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+              <p className="font-semibold mb-2">Demo Accounts</p>
+              <ul className="space-y-1">
+                <li>Admin · admin@taskmanager.com / admin123</li>
+                <li>User · user@taskmanager.com / user123</li>
+              </ul>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -490,8 +776,8 @@ export default function Home() {
             Select a team to view and manage its tasks.
           </section>
         ) : (
-          <div className="grid gap-6 md:grid-cols-3">
-            <section className="md:col-span-1 bg-white rounded-lg shadow p-6 space-y-4">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <section className="md:col-span-1 lg:col-span-1 bg-white rounded-lg shadow p-6 space-y-4">
               <h2 className="text-lg font-semibold text-gray-800">Create Task</h2>
               <form onSubmit={handleCreateTask} className="space-y-4">
                 <div>
@@ -560,7 +846,62 @@ export default function Home() {
               </form>
             </section>
 
-            <section className="md:col-span-2 bg-white rounded-lg shadow p-6">
+            <section className="md:col-span-1 lg:col-span-1 bg-white rounded-lg shadow p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-800">Team Members</h2>
+                {teamLoading && <span className="text-xs text-gray-400">Loading…</span>}
+              </div>
+              {membersWithDetails.length === 0 ? (
+                <p className="text-sm text-gray-500">No members assigned to this team yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {membersWithDetails.map((member) => (
+                    <li
+                      key={member.id}
+                      className="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-800">{member.name}</p>
+                        <p className="text-xs text-gray-500">{member.email}</p>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveMember(member.id)}
+                        className="text-xs text-red-500 hover:text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Add Member</label>
+                <div className="flex gap-2">
+                  <select
+                    value={memberToAdd}
+                    onChange={(event) => setMemberToAdd(event.target.value)}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select user</option>
+                    {availableUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAddMember}
+                    type="button"
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    disabled={!memberToAdd}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="md:col-span-2 lg:col-span-2 bg-white rounded-lg shadow p-6">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-800">Tasks</h2>
                 <div className="flex gap-3">

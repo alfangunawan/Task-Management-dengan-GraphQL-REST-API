@@ -4,32 +4,12 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const router = express.Router();
-
-// In-memory user storage (simple for demo)
-let users = [
-  {
-    id: '1',
-    email: 'admin@taskmanager.com',
-    password: '$2a$10$XYZ...', // Will be hashed
-    name: 'Admin User',
-    role: 'admin',
-    teamId: '1'
-  },
-  {
-    id: '2',
-    email: 'user@taskmanager.com',
-    password: '$2a$10$ABC...',
-    name: 'Regular User',
-    role: 'user',
-    teamId: '1'
-  }
-];
-
-// Initialize with hashed passwords
-(async () => {
-  users[0].password = await bcrypt.hash('admin123', 10);
-  users[1].password = await bcrypt.hash('user123', 10);
-})();
+const {
+  findUserByEmail,
+  findUserById,
+  addUser,
+} = require('../data/usersStore');
+const { addMemberToTeam } = require('../data/teamsStore');
 
 /**
  * POST /api/auth/register
@@ -47,7 +27,7 @@ router.post('/register', async (req, res, next) => {
     }
 
     // Check if user already exists
-    const existingUser = users.find(u => u.email === email);
+    const existingUser = findUserByEmail(email);
     if (existingUser) {
       return res.status(409).json({ 
         error: 'User with this email already exists' 
@@ -58,20 +38,24 @@ router.post('/register', async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create new user
+    const resolvedTeamId = teamId || '1';
+
     const newUser = {
       id: uuidv4(),
       email,
       password: hashedPassword,
       name,
       role: 'user',
-      teamId: teamId || '1',
+      teamId: resolvedTeamId,
       createdAt: new Date().toISOString()
     };
 
-    users.push(newUser);
+    addUser(newUser);
+    addMemberToTeam(resolvedTeamId, newUser.id);
+    const savedUser = findUserById(newUser.id);
 
     // Return user without password
-    const { password: _, ...userWithoutPassword } = newUser;
+    const { password: _, ...userWithoutPassword } = savedUser;
     res.status(201).json({
       message: 'User registered successfully',
       user: userWithoutPassword
@@ -97,7 +81,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     // Find user
-    const user = users.find(u => u.email === email);
+    const user = findUserByEmail(email);
     if (!user) {
       return res.status(401).json({ 
         error: 'Invalid email or password' 
@@ -167,7 +151,7 @@ router.get('/me', (req, res) => {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  const user = users.find(u => u.id === userInfo.id);
+  const user = findUserById(userInfo.id);
   if (!user) {
     return res.status(404).json({ error: 'User not found' });
   }
@@ -175,8 +159,5 @@ router.get('/me', (req, res) => {
   const { password: _, ...userWithoutPassword } = user;
   res.json(userWithoutPassword);
 });
-
-// Export users for use in other routes
-router.getUsers = () => users;
 
 module.exports = router;

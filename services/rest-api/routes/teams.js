@@ -1,31 +1,22 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const router = express.Router();
+const {
+  getTeams,
+  findTeamById,
+  addTeam,
+  updateTeam,
+  addMemberToTeam,
+  removeMemberFromTeam,
+} = require('../data/teamsStore');
 
-// In-memory team storage
-let teams = [
-  {
-    id: '1',
-    name: 'Development Team',
-    description: 'Main development team',
-    members: ['1', '2'],
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: '2',
-    name: 'Marketing Team',
-    description: 'Marketing and promotion team',
-    members: [],
-    createdAt: new Date().toISOString()
-  }
-];
+const router = express.Router();
 
 /**
  * GET /api/teams
  * Get all teams
  */
 router.get('/', (req, res) => {
-  res.json(teams);
+  res.json(getTeams());
 });
 
 /**
@@ -33,12 +24,12 @@ router.get('/', (req, res) => {
  * Get team by ID
  */
 router.get('/:id', (req, res) => {
-  const team = teams.find(t => t.id === req.params.id);
-  
+  const team = findTeamById(req.params.id);
+
   if (!team) {
     return res.status(404).json({ error: 'Team not found' });
   }
-  
+
   res.json(team);
 });
 
@@ -59,11 +50,11 @@ router.post('/', (req, res, next) => {
       name,
       description: description || '',
       members: [],
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     };
 
-    teams.push(newTeam);
-    res.status(201).json(newTeam);
+    const created = addTeam(newTeam);
+    res.status(201).json(created);
   } catch (error) {
     next(error);
   }
@@ -76,20 +67,18 @@ router.post('/', (req, res, next) => {
 router.put('/:id', (req, res, next) => {
   try {
     const { name, description } = req.body;
-    const teamIndex = teams.findIndex(t => t.id === req.params.id);
+    const team = findTeamById(req.params.id);
 
-    if (teamIndex === -1) {
+    if (!team) {
       return res.status(404).json({ error: 'Team not found' });
     }
 
-    teams[teamIndex] = {
-      ...teams[teamIndex],
-      name: name || teams[teamIndex].name,
-      description: description !== undefined ? description : teams[teamIndex].description,
-      updatedAt: new Date().toISOString()
-    };
+    const updated = updateTeam(req.params.id, {
+      ...(name !== undefined ? { name } : {}),
+      ...(description !== undefined ? { description } : {}),
+    });
 
-    res.json(teams[teamIndex]);
+    res.json(updated);
   } catch (error) {
     next(error);
   }
@@ -102,7 +91,7 @@ router.put('/:id', (req, res, next) => {
 router.post('/:id/members', (req, res, next) => {
   try {
     const { userId } = req.body;
-    const team = teams.find(t => t.id === req.params.id);
+    const team = findTeamById(req.params.id);
 
     if (!team) {
       return res.status(404).json({ error: 'Team not found' });
@@ -116,8 +105,8 @@ router.post('/:id/members', (req, res, next) => {
       return res.status(409).json({ error: 'User is already a member' });
     }
 
-    team.members.push(userId);
-    res.json(team);
+    const updated = addMemberToTeam(req.params.id, userId);
+    res.json(updated);
   } catch (error) {
     next(error);
   }
@@ -129,14 +118,14 @@ router.post('/:id/members', (req, res, next) => {
  */
 router.delete('/:id/members/:userId', (req, res, next) => {
   try {
-    const team = teams.find(t => t.id === req.params.id);
+    const team = findTeamById(req.params.id);
 
     if (!team) {
       return res.status(404).json({ error: 'Team not found' });
     }
 
-    team.members = team.members.filter(m => m !== req.params.userId);
-    res.json(team);
+    const updated = removeMemberFromTeam(req.params.id, req.params.userId);
+    res.json(updated);
   } catch (error) {
     next(error);
   }
