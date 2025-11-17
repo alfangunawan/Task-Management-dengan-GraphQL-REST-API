@@ -55,6 +55,7 @@ export const teamApi = {
     apiClient.post('/api/teams', payload),
   updateTeam: (id: string, payload: { name?: string; description?: string }) =>
     apiClient.put(`/api/teams/${id}`, payload),
+  deleteTeam: (id: string) => apiClient.delete(`/api/teams/${id}`),
   addMember: (teamId: string, userId: string) =>
     apiClient.post(`/api/teams/${teamId}/members`, { userId }),
   removeMember: (teamId: string, userId: string) =>

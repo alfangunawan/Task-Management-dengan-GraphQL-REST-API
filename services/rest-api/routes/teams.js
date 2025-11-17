@@ -5,9 +5,11 @@ const {
   findTeamById,
   addTeam,
   updateTeam,
+  removeTeam,
   addMemberToTeam,
   removeMemberFromTeam,
 } = require('../data/teamsStore');
+const { getUsers, updateUser } = require('../data/usersStore');
 
 const router = express.Router();
 
@@ -126,6 +128,36 @@ router.delete('/:id/members/:userId', (req, res, next) => {
 
     const updated = removeMemberFromTeam(req.params.id, req.params.userId);
     res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/teams/:id
+ * Delete team
+ */
+router.delete('/:id', (req, res, next) => {
+  try {
+    const team = findTeamById(req.params.id);
+
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    const removed = removeTeam(req.params.id);
+
+    // Clear team reference for all users that belonged to this team
+    getUsers().forEach((user) => {
+      if (user.teamId === req.params.id) {
+        updateUser(user.id, { teamId: null });
+      }
+    });
+
+    res.json({
+      message: 'Team deleted successfully',
+      team: removed,
+    });
   } catch (error) {
     next(error);
   }

@@ -42,6 +42,16 @@ const updateTeam = (id, updates) => {
   return teams[index];
 };
 
+const removeTeam = (id) => {
+  const index = teams.findIndex((team) => team.id === id);
+  if (index === -1) {
+    return null;
+  }
+
+  const [removed] = teams.splice(index, 1);
+  return removed;
+};
+
 const addMemberToTeam = (teamId, userId) => {
   const team = findTeamById(teamId);
   if (!team) {
@@ -69,6 +79,7 @@ module.exports = {
   findTeamById,
   addTeam,
   updateTeam,
+  removeTeam,
   addMemberToTeam,
   removeMemberFromTeam,
 };

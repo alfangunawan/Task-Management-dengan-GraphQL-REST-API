@@ -167,6 +167,11 @@ export default function Home() {
   const [teamMembers, setTeamMembers] = useState<string[]>([]);
   const [memberToAdd, setMemberToAdd] = useState('');
   const [teamLoading, setTeamLoading] = useState(false);
+  const [teamForm, setTeamForm] = useState({ name: '', description: '' });
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [teamActionLoading, setTeamActionLoading] = useState(false);
+  const [teamActionError, setTeamActionError] = useState<string | null>(null);
+  const [teamActionMessage, setTeamActionMessage] = useState<string | null>(null);
 
   const hasSelectedTeam = Boolean(selectedTeam);
 
@@ -359,12 +364,15 @@ export default function Home() {
     });
   };
 
-  const loadTeams = async () => {
+  const loadTeams = async (): Promise<Team[]> => {
     try {
       const response = await teamApi.getTeams();
-      setTeams(response.data);
+      const fetched = (response.data || []) as Team[];
+      setTeams(fetched);
+      return fetched;
     } catch (error) {
       console.error('Failed to load teams', error);
+      return [];
     }
   };
 
@@ -374,6 +382,101 @@ export default function Home() {
       setUsers(response.data);
     } catch (error) {
       console.error('Failed to load users', error);
+    }
+  };
+
+  const resetTeamForm = () => {
+    setTeamForm({ name: '', description: '' });
+    setEditingTeamId(null);
+  };
+
+  const handleTeamSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setTeamActionError(null);
+    setTeamActionMessage(null);
+
+    const name = teamForm.name.trim();
+    const description = teamForm.description.trim();
+
+    if (!name) {
+      setTeamActionError('Team name is required');
+      return;
+    }
+
+    try {
+      setTeamActionLoading(true);
+      if (editingTeamId) {
+        await teamApi.updateTeam(editingTeamId, {
+          name,
+          description: description || undefined,
+        });
+        setTeamActionMessage('Team updated successfully');
+      } else {
+        const response = await teamApi.createTeam({
+          name,
+          description: description || undefined,
+        });
+        const createdTeam = response.data as Team;
+        setTeamActionMessage('Team created successfully');
+        if (!selectedTeam && createdTeam?.id) {
+          setSelectedTeam(createdTeam.id);
+        }
+      }
+
+      await loadTeams();
+      resetTeamForm();
+    } catch (error: any) {
+      const message = error?.response?.data?.error || 'Failed to save team';
+      setTeamActionError(message);
+    } finally {
+      setTeamActionLoading(false);
+    }
+  };
+
+  const handleEditTeam = (team: Team) => {
+    setEditingTeamId(team.id);
+    setTeamForm({
+      name: team.name,
+      description: team.description || '',
+    });
+    setTeamActionError(null);
+    setTeamActionMessage(null);
+  };
+
+  const handleCancelEditTeam = () => {
+    resetTeamForm();
+    setTeamActionError(null);
+    setTeamActionMessage(null);
+  };
+
+  const handleDeleteTeam = async (teamId: string) => {
+    if (!confirm('Delete this team?')) {
+      return;
+    }
+
+    setTeamActionError(null);
+    setTeamActionMessage(null);
+
+    try {
+      setTeamActionLoading(true);
+      await teamApi.deleteTeam(teamId);
+
+      if (selectedTeam === teamId) {
+        setSelectedTeam('');
+        setTeamMembers([]);
+      }
+
+      if (editingTeamId === teamId) {
+        resetTeamForm();
+      }
+
+      await loadTeams();
+      setTeamActionMessage('Team deleted successfully');
+    } catch (error: any) {
+      const message = error?.response?.data?.error || 'Failed to delete team';
+      setTeamActionError(message);
+    } finally {
+      setTeamActionLoading(false);
     }
   };
 
@@ -758,6 +861,109 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        <section className="bg-white rounded-lg shadow p-6 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800">Team Management</h2>
+              <p className="text-sm text-gray-500">
+                {editingTeamId ? 'Update the selected team and keep everyone in sync.' : 'Create new teams or maintain the existing ones.'}
+              </p>
+            </div>
+            {teamActionLoading && <span className="text-xs text-gray-400">Working…</span>}
+          </div>
+          {teamActionError && <p className="text-sm text-red-600">{teamActionError}</p>}
+          {teamActionMessage && <p className="text-sm text-green-600">{teamActionMessage}</p>}
+          <form onSubmit={handleTeamSubmit} className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
+              <input
+                value={teamForm.name}
+                onChange={(event) => setTeamForm((prev) => ({ ...prev, name: event.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Product Team"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea
+                value={teamForm.description}
+                onChange={(event) => setTeamForm((prev) => ({ ...prev, description: event.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                rows={2}
+                placeholder="Optional short summary"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                disabled={teamActionLoading}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editingTeamId ? 'Update Team' : 'Create Team'}
+              </button>
+              {editingTeamId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEditTeam}
+                  className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100 transition"
+                  disabled={teamActionLoading}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+          <div className="border-t border-gray-200 pt-4 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Existing Teams</h3>
+            {teams.length === 0 ? (
+              <p className="text-sm text-gray-500">No teams available yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {teams.map((team) => (
+                  <li
+                    key={team.id}
+                    className={`flex flex-col gap-3 rounded-lg border px-3 py-3 md:flex-row md:items-center md:justify-between ${
+                      selectedTeam === team.id ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'
+                    }`}
+                  >
+                    <div>
+                      <p className="font-medium text-gray-800">{team.name}</p>
+                      {team.description && (
+                        <p className="text-sm text-gray-500">{team.description}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTeam(team.id)}
+                        className="border border-gray-300 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-100 transition"
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleEditTeam(team)}
+                        className="border border-blue-300 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-50 transition"
+                        disabled={teamActionLoading}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTeam(team.id)}
+                        className="border border-red-300 text-red-600 px-3 py-1 rounded-lg hover:bg-red-50 transition disabled:opacity-50"
+                        disabled={teamActionLoading}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
         {notifications.length > 0 && (
           <section className="space-y-2">
             {notifications.map((notification) => (
